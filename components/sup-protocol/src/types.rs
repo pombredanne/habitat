@@ -159,23 +159,19 @@ impl FromStr for DesiredState {
 impl FromStr for ServiceBind {
     type Err = NetErr;
 
-    fn from_str(bind_str: &str) -> Result<Self, Self::Err> {
-        let values: Vec<&str> = bind_str.split(':').collect();
-        if values.len() == 2 {
-            Ok(ServiceBind {
-                name: values[0].to_string(),
-                service_group: ServiceGroup::from_str(values[1])?,
-            })
-        } else {
-            Err(net::err(
-                ErrCode::InvalidPayload,
-                format!(
-                    "Invalid binding \"{}\", must be of the form <NAME>:<SERVICE_GROUP> where \
-                     <NAME> is a service name and <SERVICE_GROUP> is a valid service group.",
-                    bind_str
-                ),
-            ))
-        }
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let sb = core::service::ServiceBind::from_str(value)
+            .map_err(|e| net::err(ErrCode::InvalidPayload, e))?;
+        Ok(sb.into())
+    }
+}
+
+impl From<core::service::ServiceBind> for ServiceBind {
+    fn from(bind: core::service::ServiceBind) -> Self {
+        let mut proto = ServiceBind::default();
+        proto.name = bind.name().to_string();
+        proto.service_group = ServiceGroup::from(bind.service_group().clone());
+        proto
     }
 }
 

@@ -12,23 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::common::ui::UI;
+use crate::env::EnvironmentVariable;
+use crate::export_docker::{DockerImage, Result};
+use crate::hcore::package::{PackageArchive, PackageIdent};
+use crate::hcore::service::ServiceBind;
+use crate::manifestjson::ManifestJson;
+use crate::storage::PersistentStorage;
+use crate::topology::Topology;
+use base64;
+use clap::ArgMatches;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
-
-use crate::common::ui::UI;
-use crate::hcore::package::{PackageArchive, PackageIdent};
-use base64;
-use clap::ArgMatches;
-
-use crate::export_docker::{DockerImage, Result};
-
-use crate::env::EnvironmentVariable;
-use crate::manifestjson::ManifestJson;
-use crate::service_bind::ServiceBind;
-use crate::storage::PersistentStorage;
-use crate::topology::Topology;
 
 /// Represents a Kubernetes manifest.
 #[derive(Debug, Clone)]
@@ -124,7 +121,12 @@ impl Manifest {
             }
         };
 
-        let binds = ServiceBind::from_args(&matches)?;
+        let binds = matches
+            .values_of("BIND")
+            .unwrap_or_default()
+            .map(|b| ServiceBind::from_str(b).unwrap()) // unwrap ok as we've validated input
+            .collect();
+
         let persistent_storage = PersistentStorage::from_args(&matches)?;
         let environment = EnvironmentVariable::from_args(&matches)?;
 

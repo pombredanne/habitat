@@ -38,7 +38,7 @@ use crate::hcore::crypto::hash;
 use crate::hcore::fs::{svc_hooks_path, SvcDir, FS_ROOT_PATH};
 use crate::hcore::package::metadata::Bind;
 use crate::hcore::package::{PackageIdent, PackageInstall};
-use crate::hcore::service::{HealthCheckInterval, ServiceGroup};
+use crate::hcore::service::{HealthCheckInterval, ServiceBind, ServiceGroup};
 use crate::hcore::ChannelIdent;
 use crate::launcher_client::LauncherCli;
 pub use crate::protocol::types::{BindingMode, ProcessState, Topology, UpdateStrategy};
@@ -50,7 +50,7 @@ use time::Timespec;
 use self::context::RenderContext;
 pub use self::health::HealthCheck;
 use self::hooks::HookTable;
-pub use self::spec::{DesiredState, IntoServiceSpec, ServiceBind, ServiceSpec};
+pub use self::spec::{DesiredState, IntoServiceSpec, ServiceSpec};
 use self::supervisor::Supervisor;
 use super::ShutdownReason;
 use super::Sys;
@@ -442,22 +442,22 @@ impl Service {
                     outputln!(preamble self.service_group,
                                   "The specified service group '{}' for binding '{}' is not (yet?) present \
                                    in the census data.",
-                                  bind.service_group,
-                                  bind.name);
+                                  bind.service_group(),
+                                  bind.name());
                 }
                 BindStatus::Empty => {
                     outputln!(preamble self.service_group,
                                   "The specified service group '{}' for binding '{}' is present in the \
                                    census, but currently has no active members.",
-                                  bind.service_group,
-                                  bind.name);
+                                  bind.service_group(),
+                                  bind.name());
                 }
                 BindStatus::Unsatisfied(ref unsatisfied) => {
                     outputln!(preamble self.service_group,
                                   "The group '{}' cannot satisfy the `{}` bind because it does not export \
                                    the following required fields: {:?}",
-                                  bind.service_group,
-                                  bind.name,
+                                  bind.service_group(),
+                                  bind.name(),
                                   unsatisfied);
                 }
                 BindStatus::Satisfied => {
@@ -472,8 +472,8 @@ impl Service {
                 BindStatus::Unknown(ref e) => {
                     outputln!(preamble self.service_group,
                                   "Error validating bind for {}=>{}: {}",
-                                  bind.name,
-                                  bind.service_group,
+                                  bind.name(),
+                                  bind.service_group(),
                                   e);
                 }
             };
@@ -486,8 +486,8 @@ impl Service {
                 // unsatisfied, but now it is satisfied.
                 outputln!(preamble self.service_group,
                               "The group '{}' satisfies the `{}` bind",
-                              bind.service_group,
-                              bind.name);
+                              bind.service_group(),
+                              bind.name());
                 true
             } else {
                 false
@@ -502,13 +502,13 @@ impl Service {
         census_ring: &'a CensusRing,
         service_bind: &'a ServiceBind,
     ) -> BindStatus<'a> {
-        match census_ring.census_group_for(&service_bind.service_group) {
+        match census_ring.census_group_for(service_bind.service_group()) {
             None => BindStatus::NotPresent,
             Some(group) => {
                 if group.active_members().count() == 0 {
                     BindStatus::Empty
                 } else {
-                    match self.unsatisfied_bind_exports(group, &service_bind.name) {
+                    match self.unsatisfied_bind_exports(group, service_bind.name()) {
                         Ok(unsatisfied) => {
                             if unsatisfied.is_empty() {
                                 BindStatus::Satisfied

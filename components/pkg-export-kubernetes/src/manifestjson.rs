@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde_json::Value;
-
 use crate::hb;
+use crate::hcore::service::ServiceBind;
 use crate::manifest::Manifest;
+use serde_json::Value;
 
 /// Represents the [`Manifest`] in JSON format. This is an intermediate type that can be converted
 /// to the final manifest YAML file content, ready for consumption by a Kubernetes cluster.
@@ -35,7 +35,7 @@ impl ManifestJson {
         let binds = manifest
             .binds
             .iter()
-            .map(|bind| bind.to_json())
+            .map(|ref bind| to_json(bind))
             .collect::<Vec<_>>();
         let environment = manifest
             .environment
@@ -60,6 +60,14 @@ impl ManifestJson {
             }),
         }
     }
+}
+
+fn to_json(bind: &ServiceBind) -> serde_json::Value {
+    json!({
+        "name": bind.name(),
+        "service": bind.service_group().service(),
+        "group": bind.service_group().group(),
+    })
 }
 
 impl Into<String> for ManifestJson {

@@ -691,7 +691,7 @@ mod tests {
     use crate::common::templating::package::Pkg;
     use crate::common::templating::test_helpers::*;
     use crate::hcore::package::{PackageIdent, PackageInstall};
-    use crate::hcore::service::ServiceGroup;
+    use crate::hcore::service::{ServiceBind, ServiceGroup};
     use tempfile::TempDir;
 
     use super::super::RenderContext;
@@ -700,7 +700,6 @@ mod tests {
     use crate::common::types::ListenCtlAddr;
     use crate::config::GossipListenAddr;
     use crate::http_gateway;
-    use crate::manager::service::spec::ServiceBind;
     use crate::manager::sys::Sys;
 
     // Turns out it's useful for Hooks to implement AsRef<Path>, at

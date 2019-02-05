@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::export_docker as docker;
+use crate::hcore::service::ServiceBind;
 use clap::{App, Arg};
 use std::result;
-
-use crate::export_docker as docker;
+use std::str::FromStr;
 
 /// A Kubernetes-specific clap:App wrapper
 ///
@@ -190,6 +191,7 @@ impl<'a, 'b> Cli<'a, 'b> {
                     .short("b")
                     .multiple(true)
                     .number_of_values(1)
+                    .validator(valid_bind)
                     .help(
                         "Bind to another service to form a producer/consumer relationship, \
                          specified as name:service.group",
@@ -206,6 +208,16 @@ fn valid_natural_number(val: String) -> result::Result<(), String> {
     }
 }
 
+fn valid_bind(val: String) -> result::Result<(), String> {
+    match ServiceBind::from_str(&val) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(format!(
+            "'{}' is not valid. Service binds have the format name:service.group",
+            &val
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +229,16 @@ mod tests {
         for &s in ["x", "", "#####", "0x11", "ab"].iter() {
             assert!(valid_natural_number(s.to_owned()).is_err());
         }
+    }
+
+    #[test]
+    fn test_valid_bind_ok() {
+        valid_bind("foo:service.group".to_owned()).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "is not valid")]
+    fn test_valid_bind_err() {
+        valid_bind("foo:service".to_owned()).unwrap();
     }
 }

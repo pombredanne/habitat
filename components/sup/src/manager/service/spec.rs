@@ -15,7 +15,7 @@
 use super::{BindingMode, Topology, UpdateStrategy};
 use crate::error::{Error, Result, SupError};
 use crate::hcore::package::{PackageIdent, PackageInstall};
-use crate::hcore::service::{ApplicationEnvironment, HealthCheckInterval, ServiceGroup};
+use crate::hcore::service::{ApplicationEnvironment, HealthCheckInterval, ServiceBind};
 use crate::hcore::url::DEFAULT_BLDR_URL;
 use crate::hcore::util::{deserialize_using_from_str, serialize_using_to_string};
 use crate::hcore::ChannelIdent;
@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 use std::result;
 use std::str::FromStr;
 use std::time::Duration;
-use toml;
+// use toml;
 
 static LOGKEY: &str = "SS";
 static DEFAULT_GROUP: &str = "default";
@@ -124,7 +124,12 @@ impl IntoServiceSpec for protocol::ctl::SvcLoad {
             spec.update_strategy = UpdateStrategy::from_i32(update_strategy).unwrap_or_default();
         }
         if let Some(ref list) = self.binds {
-            spec.binds = list.binds.clone().into_iter().map(Into::into).collect();
+            spec.binds = list
+                .binds
+                .clone()
+                .into_iter()
+                .map(|b| hcore::service::ServiceBind::new(&b.name, b.service_group.into()))
+                .collect();
         }
         if let Some(binding_mode) = self.binding_mode {
             spec.binding_mode = BindingMode::from_i32(binding_mode).unwrap_or_default();
@@ -249,7 +254,7 @@ impl ServiceSpec {
     /// * If any given service binds are in neither required nor optional package binds
     fn validate_binds(&self, package: &PackageInstall) -> Result<()> {
         let mut svc_binds: HashSet<String> =
-            HashSet::from_iter(self.binds.iter().cloned().map(|b| b.name));
+            HashSet::from_iter(self.binds.iter().map(|b| b.name().to_string()));
 
         let mut missing_req_binds = Vec::new();
         // Remove each service bind that matches a required package bind. If a required package
@@ -317,82 +322,15 @@ impl FromStr for ServiceSpec {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ServiceBind {
-    pub name: String,
-    pub service_group: ServiceGroup,
-}
-
-impl FromStr for ServiceBind {
-    type Err = SupError;
-
-    fn from_str(bind_str: &str) -> result::Result<Self, Self::Err> {
-        let values: Vec<&str> = bind_str.split(':').collect();
-        if values.len() == 2 {
-            Ok(ServiceBind {
-                name: values[0].to_string(),
-                service_group: ServiceGroup::from_str(values[1])?,
-            })
-        } else {
-            Err(sup_error!(Error::InvalidBinding(bind_str.to_string())))
-        }
-    }
-}
-
-impl fmt::Display for ServiceBind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.name, self.service_group)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ServiceBind {
-    fn deserialize<D>(deserializer: D) -> result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserialize_using_from_str(deserializer)
-    }
-}
-
-impl serde::Serialize for ServiceBind {
-    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-impl From<ServiceBind> for protocol::types::ServiceBind {
-    fn from(bind: ServiceBind) -> Self {
-        let mut proto = protocol::types::ServiceBind::default();
-        proto.name = bind.name;
-        proto.service_group = bind.service_group.into();
-        proto
-    }
-}
-
-impl Into<ServiceBind> for protocol::types::ServiceBind {
-    fn into(self) -> ServiceBind {
-        ServiceBind {
-            name: self.name,
-            service_group: self.service_group.into(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
+    use crate::hcore::package::PackageIdent;
+    use crate::hcore::service::{ApplicationEnvironment, HealthCheckInterval, ServiceBind};
     use std::fs::{self, File};
     use std::io::{BufReader, Read, Write};
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
-
-    use crate::hcore::error::Error as HError;
-    use crate::hcore::package::PackageIdent;
-    use crate::hcore::service::{ApplicationEnvironment, HealthCheckInterval, ServiceGroup};
     use tempfile::TempDir;
-    use toml;
 
     use super::*;
     use crate::error::Error::*;
@@ -755,114 +693,5 @@ mod test {
         let spec = ServiceSpec::default_for(PackageIdent::from_str("origin/hoopa/1.2.3").unwrap());
 
         assert_eq!(String::from("hoopa.spec"), spec.file_name());
-    }
-
-    #[test]
-    fn service_bind_from_str() {
-        let bind_str = "name:app.env#service.group@organization";
-        let bind = ServiceBind::from_str(bind_str).unwrap();
-
-        assert_eq!(bind.name, String::from("name"));
-        assert_eq!(
-            bind.service_group,
-            ServiceGroup::from_str("app.env#service.group@organization").unwrap()
-        );
-    }
-
-    #[test]
-    fn service_bind_from_str_simple() {
-        let bind_str = "name:service.group";
-        let bind = ServiceBind::from_str(bind_str).unwrap();
-
-        assert_eq!(bind.name, String::from("name"));
-        assert_eq!(
-            bind.service_group,
-            ServiceGroup::from_str("service.group").unwrap()
-        );
-    }
-
-    #[test]
-    fn service_bind_from_str_missing_colon() {
-        let bind_str = "uhoh";
-
-        match ServiceBind::from_str(bind_str) {
-            Err(e) => match e.err {
-                InvalidBinding(val) => assert_eq!("uhoh", val),
-                wrong => panic!("Unexpected error returned: {:?}", wrong),
-            },
-            Ok(_) => panic!("String should fail to parse"),
-        }
-    }
-
-    #[test]
-    fn service_bind_from_str_too_many_colons() {
-        let bind_str = "uhoh:this:is:bad";
-
-        match ServiceBind::from_str(bind_str) {
-            Err(e) => match e.err {
-                InvalidBinding(val) => assert_eq!("uhoh:this:is:bad", val),
-                wrong => panic!("Unexpected error returned: {:?}", wrong),
-            },
-            Ok(_) => panic!("String should fail to parse"),
-        }
-    }
-
-    #[test]
-    fn service_bind_from_str_invalid_service_group() {
-        let bind_str = "uhoh:nosuchservicegroup@nope";
-
-        match ServiceBind::from_str(bind_str) {
-            Err(e) => match e.err {
-                HabitatCore(HError::InvalidServiceGroup(val)) => {
-                    assert_eq!("nosuchservicegroup@nope", val)
-                }
-                wrong => panic!("Unexpected error returned: {:?}", wrong),
-            },
-            Ok(_) => panic!("String should fail to parse"),
-        }
-    }
-
-    #[test]
-    fn service_bind_to_string() {
-        let bind = ServiceBind {
-            name: String::from("name"),
-            service_group: ServiceGroup::from_str("service.group").unwrap(),
-        };
-
-        assert_eq!("name:service.group", bind.to_string());
-    }
-
-    #[test]
-    fn service_bind_toml_deserialize() {
-        #[derive(Deserialize)]
-        struct Data {
-            key: ServiceBind,
-        }
-        let toml = r#"
-            key = "name:app.env#service.group@organization"
-            "#;
-        let data: Data = toml::from_str(toml).unwrap();
-
-        assert_eq!(
-            data.key,
-            ServiceBind::from_str("name:app.env#service.group@organization").unwrap()
-        );
-    }
-
-    #[test]
-    fn service_bind_toml_serialize() {
-        #[derive(Serialize)]
-        struct Data {
-            key: ServiceBind,
-        }
-        let data = Data {
-            key: ServiceBind {
-                name: String::from("name"),
-                service_group: ServiceGroup::from_str("service.group").unwrap(),
-            },
-        };
-        let toml = toml::to_string(&data).unwrap();
-
-        assert!(toml.starts_with(r#"key = "name:service.group""#));
     }
 }

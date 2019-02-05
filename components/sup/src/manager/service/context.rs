@@ -47,25 +47,21 @@
 //! their focused and single-use purpose; they shouldn't be used for
 //! anything else, and so, they _can't_ be used for anything else.
 
+use crate::butterfly::rumor::service::SysInfo;
+use crate::census::{CensusGroup, CensusMember, CensusRing, ElectionStatus, MemberId};
+use crate::common::templating::config::Cfg;
+use crate::common::templating::package::{Env, Pkg};
+use crate::hcore::package::PackageIdent;
+use crate::hcore::service::{ServiceBind, ServiceGroup};
+use crate::manager::Sys;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::result;
-
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
 use toml;
-
-use crate::butterfly::rumor::service::SysInfo;
-use crate::common::templating::config::Cfg;
-use crate::common::templating::package::{Env, Pkg};
-use crate::hcore::package::PackageIdent;
-use crate::hcore::service::ServiceGroup;
-
-use crate::census::{CensusGroup, CensusMember, CensusRing, ElectionStatus, MemberId};
-use crate::manager::service::ServiceBind;
-use crate::manager::Sys;
 
 /// The context of a rendering call, exposing information on the
 /// currently-running Supervisor and service, its service group, and
@@ -395,8 +391,8 @@ impl<'a> Binds<'a> {
     {
         let mut map = HashMap::default();
         for bind in bindings {
-            if let Some(group) = census.census_group_for(&bind.service_group) {
-                map.insert(bind.name.to_string(), BindGroup::new(group));
+            if let Some(group) = census.census_group_for(&bind.service_group()) {
+                map.insert(bind.name().to_string(), BindGroup::new(group));
             }
         }
         Binds(map)
