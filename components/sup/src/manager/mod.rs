@@ -180,6 +180,7 @@ pub struct ManagerConfig {
     pub organization: Option<String>,
     pub watch_peer_file: Option<String>,
     pub tls_files: Option<(PathBuf, PathBuf)>,
+    pub no_listen_gossip: bool,
 }
 
 impl ManagerConfig {
@@ -205,6 +206,7 @@ impl Default for ManagerConfig {
             organization: None,
             watch_peer_file: None,
             tls_files: None,
+            no_listen_gossip: false,
         }
     }
 }
@@ -263,6 +265,7 @@ pub struct Manager {
     service_states: HashMap<PackageIdent, Timespec>,
     sys: Arc<Sys>,
     http_disable: bool,
+    no_listen_gossip: bool,
 }
 
 impl Manager {
@@ -376,6 +379,7 @@ impl Manager {
             service_states: HashMap::new(),
             sys: Arc::new(sys),
             http_disable: cfg.http_disable,
+            no_listen_gossip: cfg.no_listen_gossip,
         })
     }
 
@@ -558,12 +562,14 @@ impl Manager {
         // This serves to start up any services that need starting
         self.take_action_on_services()?;
 
-        outputln!(
-            "Starting gossip-listener on {}",
-            self.butterfly.gossip_addr()
-        );
-        self.butterfly.start(Timing::default())?;
-        debug!("gossip-listener started");
+        if !self.no_listen_gossip {
+            outputln!(
+                "Starting gossip-listener on {}",
+                self.butterfly.gossip_addr()
+            );
+            self.butterfly.start(Timing::default())?;
+            debug!("gossip-listener started");
+        }
         self.persist_state();
         let http_listen_addr = self.sys.http_listen();
         let ctl_listen_addr = self.sys.ctl_listen();
