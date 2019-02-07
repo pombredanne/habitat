@@ -654,6 +654,7 @@ fn ensure_directory_structure(root: &Path, file: &Path, user: &str, group: &str)
 
 fn write_templated_file(path: &Path, compiled: &str, user: &str, group: &str) -> Result<()> {
     File::create(path).and_then(|mut file| file.write_all(compiled.as_bytes()))?;
+
     set_permissions(&path, &user, &group)?;
     Ok(())
 }
@@ -662,6 +663,7 @@ fn write_templated_file(path: &Path, compiled: &str, user: &str, group: &str) ->
 mod test {
     use super::*;
     use crate::error::Error;
+    use crate::hcore::os::users;
     use crate::hcore::package::{PackageIdent, PackageInstall};
     use crate::templating::context::RenderContext;
     use crate::templating::test_helpers::*;
@@ -671,8 +673,13 @@ mod test {
     use tempfile::TempDir;
     use toml;
 
-    const USER: &str = "hab";
-    const GROUP: &str = "hab";
+    fn curr_username() -> String {
+        users::get_current_username().expect("Can get current username")
+    }
+
+    fn curr_groupname() -> String {
+        users::get_current_groupname().expect("Can get current groupname")
+    }
 
     fn toml_from_str(content: &str) -> toml::value::Table {
         toml::from_str(content)
@@ -1112,7 +1119,8 @@ mod test {
         let contents = "foo\nbar\n";
 
         assert_eq!(file.exists(), false);
-        write_templated_file(&file, &contents, &USER, &GROUP).expect("writes file");
+        write_templated_file(&file, &contents, &curr_username(), &curr_groupname())
+            .expect("writes file");
         assert!(file.exists());
     }
 
@@ -1127,16 +1135,16 @@ mod test {
 
         assert_eq!(file.exists(), false);
 
-        ensure_directory_structure(&template_dir, &file, &USER, &GROUP)
+        ensure_directory_structure(&template_dir, &file, &curr_username(), &curr_groupname())
             .expect("create output dir structure");
-        write_templated_file(&file, &contents, &USER, &GROUP).expect("writes file");
+        write_templated_file(&file, &contents, &curr_username(), &curr_groupname())
+            .expect("writes file");
         assert!(file.exists());
         assert_eq!(file_content(file), contents);
     }
 
     #[test]
     #[cfg(unix)]
-    #[should_panic(expected = "Permission denied")]
     fn write_template_file_no_perms() {
         use crate::hcore::util::posix_perm;
         const NO_PERMISSIONS: u32 = 0o000;
@@ -1150,7 +1158,9 @@ mod test {
         let contents = "foo\nbar\n";
 
         assert_eq!(file.exists(), false);
-        write_templated_file(&file, &contents, &USER, &GROUP).expect("should fail on permissions");
+        assert!(
+            write_templated_file(&file, &contents, &curr_username(), &curr_groupname()).is_err()
+        );
     }
 
     #[test]
