@@ -32,11 +32,7 @@ pub struct ManifestJson {
 impl ManifestJson {
     /// Create a `ManifestJson` from `manifest`.
     pub fn new(manifest: &Manifest) -> Self {
-        let binds = manifest
-            .binds
-            .iter()
-            .map(|ref bind| to_json(bind))
-            .collect::<Vec<_>>();
+        let binds = manifest.binds.iter().map(to_json).collect::<Vec<_>>();
         let environment = manifest
             .environment
             .iter()

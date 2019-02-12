@@ -126,9 +126,10 @@ impl IntoServiceSpec for protocol::ctl::SvcLoad {
         if let Some(ref list) = self.binds {
             spec.binds = list
                 .binds
-                .clone()
-                .into_iter()
-                .map(|b| hcore::service::ServiceBind::new(&b.name, b.service_group.into()))
+                .iter()
+                .map(|pb: &habitat_sup_protocol::types::ServiceBind| {
+                    hcore::service::ServiceBind::new(&pb.name, pb.service_group.clone().into())
+                })
                 .collect();
         }
         if let Some(binding_mode) = self.binding_mode {
@@ -254,7 +255,7 @@ impl ServiceSpec {
     /// * If any given service binds are in neither required nor optional package binds
     fn validate_binds(&self, package: &PackageInstall) -> Result<()> {
         let mut svc_binds: HashSet<String> =
-            HashSet::from_iter(self.binds.iter().map(|b| b.name().to_string()));
+            HashSet::from_iter(self.binds.iter().map(ServiceBind::name).map(str::to_string));
 
         let mut missing_req_binds = Vec::new();
         // Remove each service bind that matches a required package bind. If a required package

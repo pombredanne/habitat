@@ -208,13 +208,13 @@ fn valid_natural_number(val: String) -> result::Result<(), String> {
     }
 }
 
+// TODO (JC) This might be worth moving to core if it could be used
+// elsewhere.  `ServiceGroup` already has a similar `validate` fn
 fn valid_bind(val: String) -> result::Result<(), String> {
-    match ServiceBind::from_str(&val) {
-        Ok(_) => Ok(()),
-        Err(_) => Err(format!(
-            "'{}' is not valid. Service binds have the format name:service.group",
-            &val
-        )),
+    if let Err(e) = ServiceBind::from_str(&val) {
+        Err(e.to_string())
+    } else {
+        Ok(())
     }
 }
 
@@ -233,12 +233,11 @@ mod tests {
 
     #[test]
     fn test_valid_bind_ok() {
-        valid_bind("foo:service.group".to_owned()).unwrap();
+        assert!(valid_bind("foo:service.group".to_owned()).is_ok());
     }
 
     #[test]
-    #[should_panic(expected = "is not valid")]
     fn test_valid_bind_err() {
-        valid_bind("foo:service".to_owned()).unwrap();
+        assert!(valid_bind("foo:service".to_owned()).is_err());
     }
 }

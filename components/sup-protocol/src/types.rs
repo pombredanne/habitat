@@ -43,10 +43,10 @@ where
     U: ToString,
 {
     fn from(value: (T, U)) -> ApplicationEnvironment {
-        let mut ae = ApplicationEnvironment::default();
-        ae.application = value.0.to_string();
-        ae.environment = value.1.to_string();
-        ae
+        Self {
+            application: value.0.to_string(),
+            environment: value.1.to_string(),
+        }
     }
 }
 
@@ -168,10 +168,10 @@ impl FromStr for ServiceBind {
 
 impl From<core::service::ServiceBind> for ServiceBind {
     fn from(bind: core::service::ServiceBind) -> Self {
-        let mut proto = ServiceBind::default();
-        proto.name = bind.name().to_string();
-        proto.service_group = ServiceGroup::from(bind.service_group().clone());
-        proto
+        Self {
+            name: bind.name().to_string(),
+            service_group: ServiceGroup::from(bind.service_group().clone()),
+        }
     }
 }
 
@@ -205,10 +205,10 @@ impl fmt::Display for ServiceGroup {
 
 impl From<core::service::ApplicationEnvironment> for ApplicationEnvironment {
     fn from(app_env: core::service::ApplicationEnvironment) -> Self {
-        let mut proto = ApplicationEnvironment::default();
-        proto.application = app_env.application().to_string();
-        proto.environment = app_env.environment().to_string();
-        proto
+        Self {
+            application: app_env.application().to_string(),
+            environment: app_env.environment().to_string(),
+        }
     }
 }
 
@@ -220,20 +220,20 @@ impl Into<core::service::ApplicationEnvironment> for ApplicationEnvironment {
 
 impl From<core::service::HealthCheckInterval> for HealthCheckInterval {
     fn from(h: core::service::HealthCheckInterval) -> Self {
-        let mut proto = HealthCheckInterval::default();
-        proto.seconds = h.as_ref().as_secs();
-        proto
+        Self {
+            seconds: h.as_ref().as_secs(),
+        }
     }
 }
 
 impl From<package::PackageIdent> for PackageIdent {
     fn from(ident: package::PackageIdent) -> Self {
-        let mut proto = PackageIdent::default();
-        proto.origin = ident.origin;
-        proto.name = ident.name;
-        proto.version = ident.version;
-        proto.release = ident.release;
-        proto
+        Self {
+            origin: ident.origin,
+            name: ident.name,
+            version: ident.version,
+            release: ident.release,
+        }
     }
 }
 
