@@ -254,17 +254,18 @@ impl ServiceSpec {
     /// * If any required required package binds are missing in service binds
     /// * If any given service binds are in neither required nor optional package binds
     fn validate_binds(&self, package: &PackageInstall) -> Result<()> {
-        let mut svc_binds: HashSet<String> =
-            HashSet::from_iter(self.binds.iter().map(ServiceBind::name).map(str::to_string));
-
+        let mut svc_binds: HashSet<&str> =
+            HashSet::from_iter(self.binds.iter().map(ServiceBind::name));
         let mut missing_req_binds = Vec::new();
+
         // Remove each service bind that matches a required package bind. If a required package
         // bind is not found, add the bind to the missing list to return an `Err`.
-        for req_bind in package.binds()?.iter().map(|b| &b.service) {
+        let req_binds = package.binds()?;
+        for req_bind in req_binds.iter().map(|b| b.service.as_str()) {
             if svc_binds.contains(req_bind) {
                 svc_binds.remove(req_bind);
             } else {
-                missing_req_binds.push(req_bind.clone());
+                missing_req_binds.push(req_bind.to_string());
             }
         }
         // If we have missing required binds, return an `Err`.
@@ -273,7 +274,7 @@ impl ServiceSpec {
         }
 
         // Remove each service bind that matches an optional package bind.
-        for opt_bind in package.binds_optional()?.iter().map(|b| &b.service) {
+        for opt_bind in package.binds_optional()?.iter().map(|b| b.service.as_str()) {
             if svc_binds.contains(opt_bind) {
                 svc_binds.remove(opt_bind);
             }
@@ -282,7 +283,7 @@ impl ServiceSpec {
         // binds. In this case, return an `Err`.
         if !svc_binds.is_empty() {
             return Err(sup_error!(Error::InvalidBinds(
-                svc_binds.into_iter().collect()
+                svc_binds.into_iter().map(|b| b.to_string()).collect()
             )));
         }
 
