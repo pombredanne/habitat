@@ -54,18 +54,20 @@ RUN /hab/pkgs/$ident/bin/hab/hab.exe pkg exec core/windows-service install
 ENTRYPOINT ["/hab/pkgs/$ident/bin/powershell/pwsh.exe", "-ExecutionPolicy", "bypass", "-NoLogo", "-file", "/hab/pkgs/$ident/bin/hab-studio.ps1"]
 "@ | Out-File "$tmpRoot/Dockerfile" -Encoding ascii
     
-    Write-Host "Building Docker image ${imageName}:$version'"
-    docker build --no-cache -t ${imageName}:$version .
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "docker build failed, aborting"
-    }
+Write-Host "Building Docker image ${imageName}:$version'"
+docker build --no-cache -t ${imageName}:$version .
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "docker build failed, aborting"
+}
 
-    Write-Host "Tagging latest image to ${imageName}:$version"
-    docker tag ${imageName}:$version ${imageName}:latest
-    
-    Write-Host "Tagging latest image to ${imageName}:$shortVersion"
-    docker tag ${imageName}:$version ${imageName}:$shortVersion
-    
+Write-Host "Tagging latest image to ${imageName}:$version"
+docker tag ${imageName}:$version ${imageName}:latest
+
+Write-Host "Tagging latest image to ${imageName}:$shortVersion"
+docker tag ${imageName}:$version ${imageName}:$shortVersion
+
+# Ensure the results directory exists before writing to it
+New-Item -ItemType directory -Path "$startDir/results" -Force
 @"
 `$docker_image="$imageName"
 `$docker_image_version="$version"
