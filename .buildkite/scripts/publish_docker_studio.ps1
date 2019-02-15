@@ -15,7 +15,7 @@ Write-Host "--- Publishing the Windows Docker Studio"
 Write-Host "Logging in to Bintray Docker repo"
 docker login -u="$env:BINTRAY_USER" -p="$env:BINTRAY_KEY" habitat-docker-registry.bintray.io
 
-if ! $isFakeRelease  {
+if(-Not($isFakeRelease)) {
   Write-Host "I would publish docker images now. Don't want to try to build until I have this logic and code correct"
   # try {
     # Write-Host "Pushing ${docker_image}:$docker_image_version"
