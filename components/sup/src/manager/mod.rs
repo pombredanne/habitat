@@ -170,7 +170,7 @@ pub struct ManagerConfig {
     pub custom_state_path: Option<PathBuf>,
     pub update_url: String,
     pub update_channel: ChannelIdent,
-    pub gossip_listen: GossipListenAddr,
+    pub gossip_listen: Option<GossipListenAddr>,
     pub ctl_listen: ListenCtlAddr,
     pub http_listen: http_gateway::ListenAddr,
     pub http_disable: bool,
@@ -180,7 +180,6 @@ pub struct ManagerConfig {
     pub organization: Option<String>,
     pub watch_peer_file: Option<String>,
     pub tls_files: Option<(PathBuf, PathBuf)>,
-    pub no_listen_gossip: bool,
 }
 
 impl ManagerConfig {
@@ -196,7 +195,7 @@ impl Default for ManagerConfig {
             custom_state_path: None,
             update_url: "".to_string(),
             update_channel: ChannelIdent::default(),
-            gossip_listen: GossipListenAddr::default(),
+            gossip_listen: Some(GossipListenAddr::default()),
             ctl_listen: ListenCtlAddr::default(),
             http_listen: http_gateway::ListenAddr::default(),
             http_disable: false,
@@ -206,7 +205,6 @@ impl Default for ManagerConfig {
             organization: None,
             watch_peer_file: None,
             tls_files: None,
-            no_listen_gossip: false,
         }
     }
 }
@@ -251,7 +249,7 @@ pub struct GatewayState {
 
 pub struct Manager {
     pub state: Arc<ManagerState>,
-    butterfly: butterfly::Server,
+    butterfly: Option<butterfly::Server>,
     census_ring: CensusRing,
     fs_cfg: Arc<FsCfg>,
     launcher: LauncherCli,
@@ -265,7 +263,6 @@ pub struct Manager {
     service_states: HashMap<PackageIdent, Timespec>,
     sys: Arc<Sys>,
     http_disable: bool,
-    no_listen_gossip: bool,
 }
 
 impl Manager {
@@ -329,24 +326,29 @@ impl Manager {
         let mut gateway_state = GatewayState::default();
         gateway_state.auth_token = gateway_auth_token.0;
 
-        let server = butterfly::Server::new(
-            sys.gossip_listen(),
-            sys.gossip_listen(),
-            member,
-            Trace::default(),
-            cfg.ring_key,
-            None,
-            Some(&fs_cfg.data_path),
-            Box::new(SuitabilityLookup(services.clone())),
-        )?;
-        outputln!("Supervisor Member-ID {}", sys.member_id);
-        for peer_addr in &cfg.gossip_peers {
-            let mut peer = Member::default();
-            peer.address = format!("{}", peer_addr.ip());
-            peer.swim_port = peer_addr.port();
-            peer.gossip_port = peer_addr.port();
-            server.member_list.add_initial_member(peer);
-        }
+        let butterfly = if let Some(gossip_listen) = sys.gossip_listen() {
+            let server = butterfly::Server::new(
+                gossip_listen,
+                gossip_listen,
+                member,
+                Trace::default(),
+                cfg.ring_key,
+                None,
+                Some(&fs_cfg.data_path),
+                Box::new(SuitabilityLookup(services.clone())),
+            )?;
+            outputln!("Supervisor Member-ID {}", sys.member_id);
+            for peer_addr in &cfg.gossip_peers {
+                let mut peer = Member::default();
+                peer.address = format!("{}", peer_addr.ip());
+                peer.swim_port = peer_addr.port();
+                peer.gossip_port = peer_addr.port();
+                server.member_list.add_initial_member(peer);
+            }
+            Some(server)
+        } else {
+            None
+        };
 
         let peer_watcher = if let Some(path) = cfg.watch_peer_file {
             Some(PeerWatcher::run(path)?)
@@ -365,21 +367,20 @@ impl Manager {
                 services: services,
                 gateway_state: Arc::new(RwLock::new(gateway_state)),
             }),
-            self_updater: self_updater,
-            updater: ServiceUpdater::new(server.clone()),
+            self_updater,
+            updater: ServiceUpdater::new(butterfly.clone()),
             census_ring: CensusRing::new(sys.member_id.clone()),
-            butterfly: server,
-            launcher: launcher,
-            peer_watcher: peer_watcher,
-            spec_watcher: spec_watcher,
+            butterfly,
+            launcher,
+            peer_watcher,
+            spec_watcher,
             user_config_watcher: UserConfigWatcher::new(),
-            spec_dir: spec_dir,
+            spec_dir,
             fs_cfg: Arc::new(fs_cfg),
             organization: cfg.organization,
             service_states: HashMap::new(),
             sys: Arc::new(sys),
             http_disable: cfg.http_disable,
-            no_listen_gossip: cfg.no_listen_gossip,
         })
     }
 
@@ -514,9 +515,11 @@ impl Manager {
             return;
         }
 
-        self.gossip_latest_service_rumor(&service);
-        if service.topology == Topology::Leader {
-            self.butterfly.start_election(&service.service_group, 0);
+        if let Some(butterfly) = self.butterfly {
+            self.gossip_latest_service_rumor(&service);
+            if service.topology == Topology::Leader {
+                butterfly.start_election(&service.service_group, 0);
+            }
         }
 
         if let Err(e) = self.user_config_watcher.add(&service) {
@@ -562,12 +565,9 @@ impl Manager {
         // This serves to start up any services that need starting
         self.take_action_on_services()?;
 
-        if !self.no_listen_gossip {
-            outputln!(
-                "Starting gossip-listener on {}",
-                self.butterfly.gossip_addr()
-            );
-            self.butterfly.start(Timing::default())?;
+        if let Some(butterfly) = self.butterfly {
+            outputln!("Starting gossip-listener on {}", butterfly.gossip_addr());
+            butterfly.start(Timing::default())?;
             debug!("gossip-listener started");
         }
         self.persist_state();
@@ -713,18 +713,20 @@ impl Manager {
                 self.take_action_on_services()?;
             }
 
-            self.update_peers_from_watch_file()?;
             self.update_running_services_from_user_config_watcher();
             self.check_for_updated_packages();
-            self.restart_elections();
-            self.census_ring.update_from_rumors(
-                &self.butterfly.service_store,
-                &self.butterfly.election_store,
-                &self.butterfly.update_store,
-                &self.butterfly.member_list,
-                &self.butterfly.service_config_store,
-                &self.butterfly.service_file_store,
-            );
+            if let Some(butterfly) = self.butterfly {
+                Self::update_peers_from_watch_file(&butterfly, &self.peer_watcher)?;
+                Self::restart_elections(&butterfly);
+                self.census_ring.update_from_rumors(
+                    &butterfly.service_store,
+                    &butterfly.election_store,
+                    &butterfly.update_store,
+                    &butterfly.member_list,
+                    &butterfly.service_config_store,
+                    &butterfly.service_file_store,
+                );
+            }
 
             if self.check_for_changed_services() {
                 self.persist_state();
@@ -805,25 +807,30 @@ impl Manager {
 
     // Creates a rumor for the specified service.
     fn gossip_latest_service_rumor(&self, service: &Service) {
-        let incarnation = if let Some(rumor) = self
-            .butterfly
-            .service_store
-            .list
-            .read()
-            .expect("Rumor store lock poisoned")
-            .get(&*service.service_group)
-            .and_then(|r| r.get(&self.sys.member_id))
-        {
-            rumor.clone().incarnation + 1
-        } else {
-            1
-        };
+        if let Some(butterfly) = self.butterfly {
+            let incarnation = if let Some(rumor) = butterfly
+                .service_store
+                .list
+                .read()
+                .expect("Rumor store lock poisoned")
+                .get(&*service.service_group)
+                .and_then(|r| r.get(&self.sys.member_id))
+            {
+                rumor.clone().incarnation + 1
+            } else {
+                1
+            };
 
-        self.butterfly.insert_service(service.to_rumor(incarnation));
+            butterfly.insert_service(service.to_rumor(incarnation));
+        }
     }
 
     fn check_for_departure(&self) -> bool {
-        self.butterfly.is_departed()
+        if let Some(butterfly) = self.butterfly {
+            butterfly.is_departed()
+        } else {
+            true
+        }
     }
 
     fn check_for_changed_services(&mut self) -> bool {
@@ -861,8 +868,10 @@ impl Manager {
     fn persist_state(&self) {
         debug!("Updating census state");
         self.persist_census_state();
-        debug!("Updating butterfly state");
-        self.persist_butterfly_state();
+        if let Some(butterfly) = self.butterfly {
+            debug!("Updating butterfly state");
+            self.persist_butterfly_state(&butterfly);
+        }
         debug!("Updating services state");
         self.persist_services_state();
     }
@@ -877,8 +886,8 @@ impl Manager {
             .census_data = json;
     }
 
-    fn persist_butterfly_state(&self) {
-        let bs = ServerProxy::new(&self.butterfly);
+    fn persist_butterfly_state(&self, butterfly: &butterfly::Server) {
+        let bs = ServerProxy::new(&butterfly);
         let json = serde_json::to_string(&bs).unwrap();
         self.state
             .gateway_state
@@ -969,8 +978,8 @@ impl Manager {
     }
 
     /// Check if any elections need restarting.
-    fn restart_elections(&mut self) {
-        self.butterfly.restart_elections();
+    fn restart_elections(butterfly: &butterfly::Server) {
+        butterfly.restart_elections();
     }
 
     fn shutdown(&mut self, cause: ShutdownReason) {
@@ -1008,8 +1017,10 @@ impl Manager {
                 // away, tell people, even though sending something
                 // out when _we've already been manually departed_ is
                 // perhaps excessive.
-                outputln!("Gracefully departing from butterfly network.");
-                self.butterfly.set_departed();
+                if let Some(butterfly) = self.butterfly {
+                    outputln!("Gracefully departing from butterfly network.");
+                    butterfly.set_departed();
+                }
             }
         }
 
@@ -1034,7 +1045,9 @@ impl Manager {
         }
         release_process_lock(&self.fs_cfg);
 
-        self.butterfly.persist_data();
+        if let Some(butterfly) = self.butterfly {
+            butterfly.persist_data();
+        }
     }
 
     /// Start, stop, or restart services to bring what's running in
@@ -1181,16 +1194,19 @@ impl Manager {
             .collect()
     }
 
-    fn update_peers_from_watch_file(&mut self) -> Result<()> {
-        if !self.butterfly.need_peer_seeding() {
+    fn update_peers_from_watch_file(
+        butterfly: &butterfly::Server,
+        peer_watcher: &Option<PeerWatcher>,
+    ) -> Result<()> {
+        if !butterfly.need_peer_seeding() {
             return Ok(());
         }
-        match self.peer_watcher {
+        match peer_watcher {
             None => Ok(()),
             Some(ref watcher) => {
                 if watcher.has_fs_events() {
                     let members = watcher.get_members()?;
-                    self.butterfly.member_list.set_initial_members(members);
+                    butterfly.member_list.set_initial_members(members);
                 }
                 Ok(())
             }

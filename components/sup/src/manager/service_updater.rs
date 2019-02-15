@@ -79,11 +79,11 @@ enum FollowerState {
 /// To use an update strategy, the supervisor must be configured to watch a depot for new versions.
 pub struct ServiceUpdater {
     states: UpdaterStateList,
-    butterfly: butterfly::Server,
+    butterfly: Option<butterfly::Server>,
 }
 
 impl ServiceUpdater {
-    pub fn new(butterfly: butterfly::Server) -> Self {
+    pub fn new(butterfly: Option<butterfly::Server>) -> Self {
         ServiceUpdater {
             states: UpdaterStateList::default(),
             butterfly: butterfly,
