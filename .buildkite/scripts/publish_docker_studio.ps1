@@ -7,7 +7,7 @@ $ReleaseChannel = & buildkite-agent meta-data get release-channel
 
 Write-Host "--- Building the Windows Docker Studio"
 Write-Host "$ReleaseChannel"
-if(-Not(& buildkite-agent meta-data exists fake-release).ExitCode) {
+if(-Not(& buildkite-agent meta-data exists fake-release).ExitCode -eq 0) {
   Write-Host "FakeRelease"
 }
 
@@ -18,7 +18,7 @@ Write-Host "--- Publishing the Windows Docker Studio"
 Write-Host "Logging in to Bintray Docker repo"
 docker login -u="$env:BINTRAY_USER" -p="$env:BINTRAY_KEY" habitat-docker-registry.bintray.io
 
-if(-Not(& buildkite-agent meta-data exists fake-release).ExitCode) {
+if(-Not(& buildkite-agent meta-data exists fake-release).ExitCode -eq 0) {
   Write-Host "I would publish docker images now. Don't want to try to build until I have this logic and code correct"
   # try {
     # Write-Host "Pushing ${docker_image}:$docker_image_version"
