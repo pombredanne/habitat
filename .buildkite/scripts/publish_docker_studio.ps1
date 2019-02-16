@@ -8,6 +8,9 @@ $ReleaseChannel = & buildkite-agent meta-data get release-channel
 $isFakeRelease = & buildkite-agent meta-data exists fake-release
 
 Write-Host "--- Building the Windows Docker Studio"
+Write-Host "$ReleaseChannel"
+Write-Host "$isFakeRelease"
+Write-Host "$isFakeRelease.GetType"
 & $PSScriptRoot/build_docker_image.ps1 -ReleaseChannel=$ReleaseChannel
 
 Write-Host "--- Publishing the Windows Docker Studio"
